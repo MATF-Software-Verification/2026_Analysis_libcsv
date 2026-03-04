@@ -1,0 +1,91 @@
+#!/bin/bash
+
+function sha ()
+{
+    sha512sum | cut -d " " -f 1 
+}
+
+for f in .github/workflows/* ; do
+    expected_sha=$(wget -qO- "https://raw.githubusercontent.com/MATF-Software-Verification/VS-project-ci/main/$f" | sha)
+    current_sha=$(cat $f | sha)
+    if [ "$expected_sha" != "$current_sha" ]; then
+        echo "FATAL: Your CI files are not in sync with the official repository - make sure the .github/ directory matches the upstream"
+        exit 2
+    fi
+done
+if [ -f gate ]; then
+    echo "FATAL: The 'gate' script should not be added to the repository - CI checks use the upstream version"
+    exit 2
+fi
+echo "PASS: GitHub workflows are up to date"
+
+ret=0
+
+function flc () 
+{
+    cat "$@" 2>/dev/null | wc -l
+}
+
+# Submodule check
+submodule_count=$(git submodule | wc -l)
+if [ $submodule_count -eq 0 ]; then
+    echo "FAIL: The repository does not appear to contain a submodule pointing to the original project. See: https://git-scm.com/book/en/v2/Git-Tools-Submodules"
+    ret=1
+else
+    echo "PASS: Submodule check passed"
+fi
+
+# Binary files check
+if find . -exec file {} \; | grep -i elf ; then
+    echo "FAIL: ELF files located in the repository. You should not upload executable files, use .gitignore to ignore such files."
+    ret=1
+else
+    echo "PASS: ELF type check passed"
+fi
+
+# LICENSE check
+if [ ! -f LICENSE ]; then
+    echo "WARN: LICENSE missing. Please add a license."
+else
+    echo "PASS: LICENSE check"
+fi
+
+# README check
+if [ -f "README.md" ]; then
+    readme_lc=$(flc README.md)
+    if [ $readme_lc -lt 10 ]; then
+        echo "FAIL: README is not detailed enough. Please add a more extensive README."
+        ret=1
+    else
+        echo "PASS: README check"
+    fi
+else
+    echo "FAIL: README missing"
+    ret=1
+fi
+
+# ProjectAnalysisReport check
+par_lc=$(flc ProjectAnalysisReport.*)
+if [ $par_lc != 0 ]; then
+    if [ $par_lc -lt 50 ]; then
+        echo "FAIL: ProjectAnalysisReport is not detailed enough. Please add a more extensive ProjectAnalysisReport."
+        ret=1
+    else
+        echo "PASS: ProjectAnalysisReport check"
+    fi
+else
+    echo "FAIL: ProjectAnalysisReport missing"
+    ret=1
+fi
+
+
+# Final note
+if [ $ret -ne 0 ]; then
+    echo
+    echo "=== GATE FAILED ==="
+    echo "Please re-read instructions on the course webpage: https://www.verifikacijasoftvera.matf.bg.ac.rs/#1_tab"
+else
+    echo "=== GATE PASSED ==="
+fi
+
+exit $ret
