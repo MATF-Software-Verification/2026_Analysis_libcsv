@@ -1,0 +1,17 @@
+=== UNIT TEST ===
+FIELD: a
+FIELD: b
+FIELD: c
+ROW END: 
+
+FIELD: 1
+FIELD: 2
+FIELD: 3
+ROW END: 
+
+FIELD: quoted,field
+FIELD: 4
+FIELD: 5
+ROW END: EOF
+Parsed 30 characters
+All unit tests OK

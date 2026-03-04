@@ -1,0 +1,932 @@
+        -:    0:Source:libcsv.c
+        -:    0:Graph:integration-libcsv.gcno
+        -:    0:Data:integration-libcsv.gcda
+        -:    0:Runs:1
+        -:    1:/*
+        -:    2:libcsv - parse and write csv data
+        -:    3:Copyright (C) 2008  Robert Gamble
+        -:    4:
+        -:    5:This library is free software; you can redistribute it and/or
+        -:    6:modify it under the terms of the GNU Lesser General Public
+        -:    7:License as published by the Free Software Foundation; either
+        -:    8:version 2.1 of the License, or (at your option) any later version.
+        -:    9:
+        -:   10:This library is distributed in the hope that it will be useful,
+        -:   11:but WITHOUT ANY WARRANTY; without even the implied warranty of
+        -:   12:MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+        -:   13:Lesser General Public License for more details.
+        -:   14:
+        -:   15:You should have received a copy of the GNU Lesser General Public
+        -:   16:License along with this library; if not, write to the Free Software
+        -:   17:Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+        -:   18:*/
+        -:   19:
+        -:   20:#include <assert.h>
+        -:   21:
+        -:   22:#if __STDC_VERSION__ >= 199901L
+        -:   23:#  include <stdint.h>
+        -:   24:#else
+        -:   25:#  define SIZE_MAX ((size_t)-1) /* C89 doesn't have stdint.h or SIZE_MAX */
+        -:   26:#endif
+        -:   27:
+        -:   28:#include "csv.h"
+        -:   29:
+        -:   30:#define VERSION "3.0.3"
+        -:   31:
+        -:   32:#define ROW_NOT_BEGUN           0
+        -:   33:#define FIELD_NOT_BEGUN         1
+        -:   34:#define FIELD_BEGUN             2
+        -:   35:#define FIELD_MIGHT_HAVE_ENDED  3
+        -:   36:
+        -:   37:/*
+        -:   38:  Explanation of states
+        -:   39:  ROW_NOT_BEGUN    There have not been any fields encountered for this row
+        -:   40:  FIELD_NOT_BEGUN  There have been fields but we are currently not in one
+        -:   41:  FIELD_BEGUN      We are in a field
+        -:   42:  FIELD_MIGHT_HAVE_ENDED
+        -:   43:                   We encountered a double quote inside a quoted field, the
+        -:   44:                   field is either ended or the quote is literal
+        -:   45:*/
+        -:   46:
+        -:   47:#define MEM_BLK_SIZE 128
+        -:   48:
+        -:   49:#define SUBMIT_FIELD(p) \
+        -:   50:  do { \
+        -:   51:   if (!quoted) \
+        -:   52:     entry_pos -= spaces; \
+        -:   53:   if (p->options & CSV_APPEND_NULL) \
+        -:   54:     ((p)->entry_buf[entry_pos]) = '\0'; \
+        -:   55:   if (cb1 && (p->options & CSV_EMPTY_IS_NULL) && !quoted && entry_pos == 0) \
+        -:   56:     cb1(NULL, entry_pos, data); \
+        -:   57:   else if (cb1) \
+        -:   58:     cb1(p->entry_buf, entry_pos, data); \
+        -:   59:   pstate = FIELD_NOT_BEGUN; \
+        -:   60:   entry_pos = quoted = spaces = 0; \
+        -:   61: } while (0)
+        -:   62:
+        -:   63:#define SUBMIT_ROW(p, c) \
+        -:   64:  do { \
+        -:   65:    if (cb2) \
+        -:   66:      cb2(c, data); \
+        -:   67:    pstate = ROW_NOT_BEGUN; \
+        -:   68:    entry_pos = quoted = spaces = 0; \
+        -:   69:  } while (0)
+        -:   70:
+        -:   71:#define SUBMIT_CHAR(p, c) ((p)->entry_buf[entry_pos++] = (c))
+        -:   72:
+        -:   73:static const char *csv_errors[] = {"success",
+        -:   74:                             "error parsing data while strict checking enabled",
+        -:   75:                             "memory exhausted while increasing buffer size",
+        -:   76:                             "data size too large",
+        -:   77:                             "invalid status code"};
+        -:   78:
+        -:   79:int
+function csv_error called 0 returned 0% blocks executed 0%
+    #####:   80:csv_error(const struct csv_parser *p)
+        -:   81:{
+    #####:   82:  assert(p && "received null csv_parser");
+branch  0 never executed (fallthrough)
+branch  1 never executed
+call    2 never executed
+        -:   83:
+        -:   84:  /* Return the current status of the parser */
+    #####:   85:  return p->status;
+        -:   86:}
+        -:   87:
+        -:   88:const char *
+function csv_strerror called 0 returned 0% blocks executed 0%
+    #####:   89:csv_strerror(int status)
+        -:   90:{
+        -:   91:  /* Return a textual description of status */
+    #####:   92:  if (status >= CSV_EINVALID || status < 0)
+branch  0 never executed (fallthrough)
+branch  1 never executed
+branch  2 never executed (fallthrough)
+branch  3 never executed
+    #####:   93:    return csv_errors[CSV_EINVALID];
+        -:   94:  else
+    #####:   95:    return csv_errors[status];
+        -:   96:}
+        -:   97:
+        -:   98:int
+function csv_get_opts called 0 returned 0% blocks executed 0%
+    #####:   99:csv_get_opts(const struct csv_parser *p)
+        -:  100:{
+        -:  101:  /* Return the currently set options of parser */
+    #####:  102:  if (p == NULL)
+branch  0 never executed (fallthrough)
+branch  1 never executed
+    #####:  103:    return -1;
+        -:  104:
+    #####:  105:  return p->options;
+        -:  106:}
+        -:  107:
+        -:  108:int
+function csv_set_opts called 0 returned 0% blocks executed 0%
+    #####:  109:csv_set_opts(struct csv_parser *p, unsigned char options)
+        -:  110:{
+        -:  111:  /* Set the options */
+    #####:  112:  if (p == NULL)
+branch  0 never executed (fallthrough)
+branch  1 never executed
+    #####:  113:    return -1;
+        -:  114:
+    #####:  115:  p->options = options;
+    #####:  116:  return 0;
+        -:  117:}
+        -:  118:
+        -:  119:int
+function csv_init called 1 returned 100% blocks executed 75%
+        1:  120:csv_init(struct csv_parser *p, unsigned char options)
+        -:  121:{
+        -:  122:  /* Initialize a csv_parser object returns 0 on success, -1 on error */
+        1:  123:  if (p == NULL)
+branch  0 taken 0 (fallthrough)
+branch  1 taken 1
+    #####:  124:    return -1;
+        -:  125:
+        1:  126:  p->entry_buf = NULL;
+        1:  127:  p->pstate = ROW_NOT_BEGUN;
+        1:  128:  p->quoted = 0;
+        1:  129:  p->spaces = 0;
+        1:  130:  p->entry_pos = 0;
+        1:  131:  p->entry_size = 0;
+        1:  132:  p->status = 0;
+        1:  133:  p->options = options;
+        1:  134:  p->quote_char = CSV_QUOTE;
+        1:  135:  p->delim_char = CSV_COMMA;
+        1:  136:  p->is_space = NULL;
+        1:  137:  p->is_term = NULL;
+        1:  138:  p->blk_size = MEM_BLK_SIZE;
+        1:  139:  p->malloc_func = NULL;
+        1:  140:  p->realloc_func = realloc;
+        1:  141:  p->free_func = free;
+        -:  142:
+        1:  143:  return 0;
+        -:  144:}
+        -:  145:
+        -:  146:void
+function csv_free called 1 returned 100% blocks executed 86%
+        1:  147:csv_free(struct csv_parser *p)
+        -:  148:{
+        -:  149:  /* Free the entry_buffer of csv_parser object */
+        1:  150:  if (p == NULL)
+branch  0 taken 0 (fallthrough)
+branch  1 taken 1
+    #####:  151:    return;
+        -:  152:
+        1:  153:  if (p->entry_buf && p->free_func)
+branch  0 taken 1 (fallthrough)
+branch  1 taken 0
+branch  2 taken 1 (fallthrough)
+branch  3 taken 0
+        1:  154:    p->free_func(p->entry_buf);
+call    0 returned 1
+        -:  155:
+        1:  156:  p->entry_buf = NULL;
+        1:  157:  p->entry_size = 0;
+        -:  158:
+        1:  159:  return;
+        -:  160:}
+        -:  161:
+        -:  162:int
+function csv_fini called 1 returned 100% blocks executed 20%
+        1:  163:csv_fini(struct csv_parser *p, void (*cb1)(void *, size_t, void *), void (*cb2)(int c, void *), void *data)
+        -:  164:{
+        1:  165:  if (p == NULL)
+branch  0 taken 0 (fallthrough)
+branch  1 taken 1
+    #####:  166:    return -1;
+        -:  167:
+        -:  168:  /* Finalize parsing.  Needed, for example, when file does not end in a newline */
+        1:  169:  int quoted = p->quoted;
+        1:  170:  int pstate = p->pstate;
+        1:  171:  size_t spaces = p->spaces;
+        1:  172:  size_t entry_pos = p->entry_pos;
+        -:  173:
+       1*:  174:  if ((pstate == FIELD_BEGUN) && p->quoted && (p->options & CSV_STRICT) && (p->options & CSV_STRICT_FINI)) {
+branch  0 taken 0 (fallthrough)
+branch  1 taken 1
+branch  2 never executed (fallthrough)
+branch  3 never executed
+branch  4 never executed (fallthrough)
+branch  5 never executed
+branch  6 never executed (fallthrough)
+branch  7 never executed
+        -:  175:    /* Current field is quoted, no end-quote was seen, and CSV_STRICT_FINI is set */
+    #####:  176:    p->status = CSV_EPARSE;
+    #####:  177:    return -1;
+        -:  178:  }
+        -:  179:
+        1:  180:  switch (pstate) {
+branch  0 taken 0
+branch  1 taken 0
+branch  2 taken 1
+    #####:  181:    case FIELD_MIGHT_HAVE_ENDED:
+    #####:  182:      p->entry_pos -= p->spaces + 1;  /* get rid of spaces and original quote */
+    #####:  183:      entry_pos = p->entry_pos;
+        -:  184:      /*lint -fallthrough */
+    #####:  185:    case FIELD_NOT_BEGUN:
+        -:  186:    case FIELD_BEGUN:
+        -:  187:      /* Unnecessary:
+        -:  188:      quoted = p->quoted, pstate = p->pstate;
+        -:  189:      spaces = p->spaces, entry_pos = p->entry_pos;
+        -:  190:      */
+    #####:  191:      SUBMIT_FIELD(p);
+branch  0 never executed (fallthrough)
+branch  1 never executed
+branch  2 never executed (fallthrough)
+branch  3 never executed
+branch  4 never executed (fallthrough)
+branch  5 never executed
+branch  6 never executed (fallthrough)
+branch  7 never executed
+branch  8 never executed (fallthrough)
+branch  9 never executed
+branch 10 never executed (fallthrough)
+branch 11 never executed
+call   12 never executed
+branch 13 never executed (fallthrough)
+branch 14 never executed
+call   15 never executed
+    #####:  192:      SUBMIT_ROW(p, -1);
+branch  0 never executed (fallthrough)
+branch  1 never executed
+call    2 never executed
+    #####:  193:      break;
+        1:  194:    case ROW_NOT_BEGUN: /* Already ended properly */
+        -:  195:      ;
+        -:  196:  }
+        -:  197:
+        -:  198:  /* Reset parser */
+        1:  199:  p->spaces = p->quoted = p->entry_pos = p->status = 0;
+        1:  200:  p->pstate = ROW_NOT_BEGUN;
+        -:  201:
+        1:  202:  return 0;
+        -:  203:}
+        -:  204:
+        -:  205:void
+function csv_set_delim called 0 returned 0% blocks executed 0%
+    #####:  206:csv_set_delim(struct csv_parser *p, unsigned char c)
+        -:  207:{
+        -:  208:  /* Set the delimiter */
+    #####:  209:  if (p) p->delim_char = c;
+branch  0 never executed (fallthrough)
+branch  1 never executed
+    #####:  210:}
+        -:  211:
+        -:  212:void
+function csv_set_quote called 0 returned 0% blocks executed 0%
+    #####:  213:csv_set_quote(struct csv_parser *p, unsigned char c)
+        -:  214:{
+        -:  215:  /* Set the quote character */
+    #####:  216:  if (p) p->quote_char = c;
+branch  0 never executed (fallthrough)
+branch  1 never executed
+    #####:  217:}
+        -:  218:
+        -:  219:unsigned char
+function csv_get_delim called 0 returned 0% blocks executed 0%
+    #####:  220:csv_get_delim(const struct csv_parser *p)
+        -:  221:{
+    #####:  222:  assert(p && "received null csv_parser");
+branch  0 never executed (fallthrough)
+branch  1 never executed
+call    2 never executed
+        -:  223:
+        -:  224:  /* Get the delimiter */
+    #####:  225:  return p->delim_char;
+        -:  226:}
+        -:  227:
+        -:  228:unsigned char
+function csv_get_quote called 0 returned 0% blocks executed 0%
+    #####:  229:csv_get_quote(const struct csv_parser *p)
+        -:  230:{
+    #####:  231:  assert(p && "received null csv_parser");
+branch  0 never executed (fallthrough)
+branch  1 never executed
+call    2 never executed
+        -:  232:
+        -:  233:  /* Get the quote character */
+    #####:  234:  return p->quote_char;
+        -:  235:}
+        -:  236:
+        -:  237:void
+function csv_set_space_func called 0 returned 0% blocks executed 0%
+    #####:  238:csv_set_space_func(struct csv_parser *p, int (*f)(unsigned char))
+        -:  239:{
+        -:  240:  /* Set the space function */
+    #####:  241:  if (p) p->is_space = f;
+branch  0 never executed (fallthrough)
+branch  1 never executed
+    #####:  242:}
+        -:  243: 
+        -:  244:void
+function csv_set_term_func called 0 returned 0% blocks executed 0%
+    #####:  245:csv_set_term_func(struct csv_parser *p, int (*f)(unsigned char))
+        -:  246:{
+        -:  247:  /* Set the term function */
+    #####:  248:  if (p) p->is_term = f;
+branch  0 never executed (fallthrough)
+branch  1 never executed
+    #####:  249:}
+        -:  250:
+        -:  251:void
+function csv_set_realloc_func called 0 returned 0% blocks executed 0%
+    #####:  252:csv_set_realloc_func(struct csv_parser *p, void *(*f)(void *, size_t))
+        -:  253:{
+        -:  254:  /* Set the realloc function used to increase buffer size */
+    #####:  255:  if (p && f) p->realloc_func = f;
+branch  0 never executed (fallthrough)
+branch  1 never executed
+branch  2 never executed (fallthrough)
+branch  3 never executed
+    #####:  256:}
+        -:  257: 
+        -:  258:void
+function csv_set_free_func called 0 returned 0% blocks executed 0%
+    #####:  259:csv_set_free_func(struct csv_parser *p, void (*f)(void *))
+        -:  260:{
+        -:  261:  /* Set the free function used to free the buffer */
+    #####:  262:  if (p && f) p->free_func = f;
+branch  0 never executed (fallthrough)
+branch  1 never executed
+branch  2 never executed (fallthrough)
+branch  3 never executed
+    #####:  263:}
+        -:  264:
+        -:  265:void
+function csv_set_blk_size called 0 returned 0% blocks executed 0%
+    #####:  266:csv_set_blk_size(struct csv_parser *p, size_t size)
+        -:  267:{
+        -:  268:  /* Set the block size used to increment buffer size */
+    #####:  269:  if (p) p->blk_size = size;
+branch  0 never executed (fallthrough)
+branch  1 never executed
+    #####:  270:}
+        -:  271:
+        -:  272:size_t
+function csv_get_buffer_size called 0 returned 0% blocks executed 0%
+    #####:  273:csv_get_buffer_size(const struct csv_parser *p)
+        -:  274:{
+        -:  275:  /* Get the size of the entry buffer */
+    #####:  276:  if (p)
+branch  0 never executed (fallthrough)
+branch  1 never executed
+    #####:  277:    return p->entry_size;
+    #####:  278:  return 0;
+        -:  279:}
+        -:  280: 
+        -:  281:static int
+function csv_increase_buffer called 1 returned 100% blocks executed 56%
+        1:  282:csv_increase_buffer(struct csv_parser *p)
+        -:  283:{
+       1*:  284:  if (p == NULL) return 0;
+branch  0 taken 0 (fallthrough)
+branch  1 taken 1
+       1*:  285:  if (p->realloc_func == NULL) return 0;
+branch  0 taken 0 (fallthrough)
+branch  1 taken 1
+        -:  286:  
+        -:  287:  /* Increase the size of the entry buffer.  Attempt to increase size by 
+        -:  288:   * p->blk_size, if this is larger than SIZE_MAX try to increase current
+        -:  289:   * buffer size to SIZE_MAX.  If allocation fails, try to allocate halve 
+        -:  290:   * the size and try again until successful or increment size is zero.
+        -:  291:   */
+        -:  292:
+        1:  293:  size_t to_add = p->blk_size;
+        -:  294:  void *vp;
+        -:  295:
+        1:  296:  if ( p->entry_size >= SIZE_MAX - to_add )
+branch  0 taken 0 (fallthrough)
+branch  1 taken 1
+    #####:  297:    to_add = SIZE_MAX - p->entry_size;
+        -:  298:
+        1:  299:  if (!to_add) {
+branch  0 taken 0 (fallthrough)
+branch  1 taken 1
+    #####:  300:    p->status = CSV_ETOOBIG;
+    #####:  301:    return -1;
+        -:  302:  }
+        -:  303:
+        1:  304:  while ((vp = p->realloc_func(p->entry_buf, p->entry_size + to_add)) == NULL) {
+call    0 returned 1
+branch  1 taken 0
+branch  2 taken 1 (fallthrough)
+    #####:  305:    to_add /= 2;
+    #####:  306:    if (!to_add) {
+branch  0 never executed (fallthrough)
+branch  1 never executed
+    #####:  307:      p->status = CSV_ENOMEM;
+    #####:  308:      return -1;
+        -:  309:    }
+        -:  310:  }
+        -:  311:
+        -:  312:  /* Update entry buffer pointer and entry_size if successful */
+        1:  313:  p->entry_buf = vp;
+        1:  314:  p->entry_size += to_add;
+        1:  315:  return 0;
+        -:  316:}
+        -:  317: 
+        -:  318:size_t
+function csv_parse called 1 returned 100% blocks executed 43%
+        1:  319:csv_parse(struct csv_parser *p, const void *s, size_t len, void (*cb1)(void *, size_t, void *), void (*cb2)(int c, void *), void *data)
+        -:  320:{
+       1*:  321:  assert(p && "received null csv_parser");
+branch  0 taken 0 (fallthrough)
+branch  1 taken 1
+call    2 never executed
+        -:  322:
+       1*:  323:  if (s == NULL) return 0;
+branch  0 taken 0 (fallthrough)
+branch  1 taken 1
+        -:  324:  
+        1:  325:  unsigned const char *us = s;  /* Access input data as array of unsigned char */
+        -:  326:  unsigned char c;              /* The character we are currently processing */
+        1:  327:  size_t pos = 0;               /* The number of characters we have processed in this call */
+        -:  328:
+        -:  329:  /* Store key fields into local variables for performance */
+        1:  330:  unsigned char delim = p->delim_char;
+        1:  331:  unsigned char quote = p->quote_char;
+        1:  332:  int (*is_space)(unsigned char) = p->is_space;
+        1:  333:  int (*is_term)(unsigned char) = p->is_term;
+        1:  334:  int quoted = p->quoted;
+        1:  335:  int pstate = p->pstate;
+        1:  336:  size_t spaces = p->spaces;
+        1:  337:  size_t entry_pos = p->entry_pos;
+        -:  338:
+        -:  339:
+        1:  340:  if (!p->entry_buf && pos < len) {
+branch  0 taken 1 (fallthrough)
+branch  1 taken 0
+branch  2 taken 1 (fallthrough)
+branch  3 taken 0
+        -:  341:    /* Buffer hasn't been allocated yet and len > 0 */
+        1:  342:    if (csv_increase_buffer(p) != 0) { 
+call    0 returned 1
+branch  1 taken 0 (fallthrough)
+branch  2 taken 1
+    #####:  343:      p->quoted = quoted, p->pstate = pstate, p->spaces = spaces, p->entry_pos = entry_pos;
+    #####:  344:      return pos;
+        -:  345:    }
+        -:  346:  }
+        -:  347:
+       78:  348:  while (pos < len) {
+branch  0 taken 77
+branch  1 taken 1 (fallthrough)
+        -:  349:    /* Check memory usage, increase buffer if necessary */
+      77*:  350:    if (entry_pos == ((p->options & CSV_APPEND_NULL) ? p->entry_size - 1 : p->entry_size) ) {
+branch  0 taken 77 (fallthrough)
+branch  1 taken 0
+branch  2 taken 0 (fallthrough)
+branch  3 taken 77
+    #####:  351:      if (csv_increase_buffer(p) != 0) {
+call    0 never executed
+branch  1 never executed (fallthrough)
+branch  2 never executed
+    #####:  352:        p->quoted = quoted, p->pstate = pstate, p->spaces = spaces, p->entry_pos = entry_pos;
+    #####:  353:        return pos;
+        -:  354:      }
+        -:  355:    }
+        -:  356:
+       77:  357:    c = us[pos++];
+        -:  358:
+       77:  359:    switch (pstate) {
+branch  0 taken 12
+branch  1 taken 64
+branch  2 taken 1
+branch  3 taken 0
+       12:  360:      case ROW_NOT_BEGUN:
+        -:  361:      case FIELD_NOT_BEGUN:
+      12*:  362:        if ((is_space ? is_space(c) : c == CSV_SPACE || c == CSV_TAB) && c!=delim) { /* Space or Tab */
+branch  0 taken 0 (fallthrough)
+branch  1 taken 12
+call    2 never executed
+branch  3 never executed
+branch  4 never executed
+branch  5 taken 12 (fallthrough)
+branch  6 taken 0
+branch  7 taken 0 (fallthrough)
+branch  8 taken 12
+branch  9 taken 0 (fallthrough)
+branch 10 taken 12
+branch 11 never executed (fallthrough)
+branch 12 never executed
+    #####:  363:          continue;
+      12*:  364:        } else if (is_term ? is_term(c) : c == CSV_CR || c == CSV_LF) { /* Carriage Return or Line Feed */
+branch  0 taken 0 (fallthrough)
+branch  1 taken 12
+call    2 never executed
+branch  3 taken 12 (fallthrough)
+branch  4 taken 0
+branch  5 taken 0 (fallthrough)
+branch  6 taken 12
+branch  7 taken 0 (fallthrough)
+branch  8 taken 12
+    #####:  365:          if (pstate == FIELD_NOT_BEGUN) {
+branch  0 never executed (fallthrough)
+branch  1 never executed
+    #####:  366:            SUBMIT_FIELD(p);
+branch  0 never executed (fallthrough)
+branch  1 never executed
+branch  2 never executed (fallthrough)
+branch  3 never executed
+branch  4 never executed (fallthrough)
+branch  5 never executed
+branch  6 never executed (fallthrough)
+branch  7 never executed
+branch  8 never executed (fallthrough)
+branch  9 never executed
+branch 10 never executed (fallthrough)
+branch 11 never executed
+call   12 never executed
+branch 13 never executed (fallthrough)
+branch 14 never executed
+call   15 never executed
+    #####:  367:            SUBMIT_ROW(p, c); 
+branch  0 never executed (fallthrough)
+branch  1 never executed
+call    2 never executed
+        -:  368:          } else {  /* ROW_NOT_BEGUN */
+        -:  369:            /* Don't submit empty rows by default */
+    #####:  370:            if (p->options & CSV_REPALL_NL) {
+branch  0 never executed (fallthrough)
+branch  1 never executed
+    #####:  371:              SUBMIT_ROW(p, c);
+branch  0 never executed (fallthrough)
+branch  1 never executed
+call    2 never executed
+        -:  372:            }
+        -:  373:          }
+    #####:  374:          continue;
+       12:  375:        } else if (c == delim) { /* Comma */
+branch  0 taken 0 (fallthrough)
+branch  1 taken 12
+    #####:  376:          SUBMIT_FIELD(p);
+branch  0 never executed (fallthrough)
+branch  1 never executed
+branch  2 never executed (fallthrough)
+branch  3 never executed
+branch  4 never executed (fallthrough)
+branch  5 never executed
+branch  6 never executed (fallthrough)
+branch  7 never executed
+branch  8 never executed (fallthrough)
+branch  9 never executed
+branch 10 never executed (fallthrough)
+branch 11 never executed
+call   12 never executed
+branch 13 never executed (fallthrough)
+branch 14 never executed
+call   15 never executed
+    #####:  377:          break;
+       12:  378:        } else if (c == quote) { /* Quote */
+branch  0 taken 1 (fallthrough)
+branch  1 taken 11
+        1:  379:          pstate = FIELD_BEGUN;
+        1:  380:          quoted = 1;
+        -:  381:        } else {               /* Anything else */
+       11:  382:          pstate = FIELD_BEGUN;
+       11:  383:          quoted = 0;
+       11:  384:          SUBMIT_CHAR(p, c);
+        -:  385:        }
+       12:  386:        break;
+       64:  387:      case FIELD_BEGUN:
+       64:  388:        if (c == quote) {         /* Quote */
+branch  0 taken 1 (fallthrough)
+branch  1 taken 63
+        1:  389:          if (quoted) {
+branch  0 taken 1 (fallthrough)
+branch  1 taken 0
+        1:  390:            SUBMIT_CHAR(p, c);
+        1:  391:            pstate = FIELD_MIGHT_HAVE_ENDED;
+        -:  392:          } else {
+        -:  393:            /* STRICT ERROR - double quote inside non-quoted field */
+    #####:  394:            if (p->options & CSV_STRICT) {
+branch  0 never executed (fallthrough)
+branch  1 never executed
+    #####:  395:              p->status = CSV_EPARSE;
+    #####:  396:              p->quoted = quoted, p->pstate = pstate, p->spaces = spaces, p->entry_pos = entry_pos;
+    #####:  397:              return pos-1;
+        -:  398:            }
+    #####:  399:            SUBMIT_CHAR(p, c);
+    #####:  400:            spaces = 0;
+        -:  401:          }
+       63:  402:        } else if (c == delim) {  /* Comma */
+branch  0 taken 8 (fallthrough)
+branch  1 taken 55
+        8:  403:          if (quoted) {
+branch  0 taken 1 (fallthrough)
+branch  1 taken 7
+        1:  404:            SUBMIT_CHAR(p, c);
+        -:  405:          } else {
+       7*:  406:            SUBMIT_FIELD(p);
+branch  0 taken 7 (fallthrough)
+branch  1 taken 0
+branch  2 taken 7 (fallthrough)
+branch  3 taken 0
+branch  4 taken 7 (fallthrough)
+branch  5 taken 0
+branch  6 taken 0 (fallthrough)
+branch  7 taken 7
+branch  8 never executed (fallthrough)
+branch  9 never executed
+branch 10 never executed (fallthrough)
+branch 11 never executed
+call   12 never executed
+branch 13 taken 7 (fallthrough)
+branch 14 taken 0
+call   15 returned 7
+        -:  407:          }
+      55*:  408:        } else if (is_term ? is_term(c) : c == CSV_CR || c == CSV_LF) {  /* Carriage Return or Line Feed */
+branch  0 taken 0 (fallthrough)
+branch  1 taken 55
+call    2 never executed
+branch  3 taken 55 (fallthrough)
+branch  4 taken 0
+branch  5 taken 4 (fallthrough)
+branch  6 taken 51
+branch  7 taken 4 (fallthrough)
+branch  8 taken 51
+        4:  409:          if (!quoted) {
+branch  0 taken 4 (fallthrough)
+branch  1 taken 0
+       4*:  410:            SUBMIT_FIELD(p);
+branch  0 taken 4 (fallthrough)
+branch  1 taken 0
+branch  2 taken 4 (fallthrough)
+branch  3 taken 0
+branch  4 taken 4 (fallthrough)
+branch  5 taken 0
+branch  6 taken 0 (fallthrough)
+branch  7 taken 4
+branch  8 never executed (fallthrough)
+branch  9 never executed
+branch 10 never executed (fallthrough)
+branch 11 never executed
+call   12 never executed
+branch 13 taken 4 (fallthrough)
+branch 14 taken 0
+call   15 returned 4
+        4:  411:            SUBMIT_ROW(p, c);
+branch  0 taken 4 (fallthrough)
+branch  1 taken 0
+call    2 returned 4
+        -:  412:          } else {
+    #####:  413:            SUBMIT_CHAR(p, c);
+        -:  414:          }
+      51*:  415:        } else if (!quoted && (is_space? is_space(c) : c == CSV_SPACE || c == CSV_TAB)) { /* Tab or space for non-quoted field */
+branch  0 taken 43 (fallthrough)
+branch  1 taken 8
+branch  2 taken 0 (fallthrough)
+branch  3 taken 43
+call    4 never executed
+branch  5 never executed
+branch  6 never executed
+branch  7 taken 43 (fallthrough)
+branch  8 taken 0
+branch  9 taken 0 (fallthrough)
+branch 10 taken 43
+branch 11 taken 0 (fallthrough)
+branch 12 taken 43
+    #####:  416:            SUBMIT_CHAR(p, c);
+    #####:  417:            spaces++;
+        -:  418:        } else {  /* Anything else */
+       51:  419:          SUBMIT_CHAR(p, c);
+       51:  420:          spaces = 0;
+        -:  421:        }
+       64:  422:        break;
+        1:  423:      case FIELD_MIGHT_HAVE_ENDED:
+        -:  424:        /* This only happens when a quote character is encountered in a quoted field */
+        1:  425:        if (c == delim) {  /* Comma */
+branch  0 taken 1 (fallthrough)
+branch  1 taken 0
+        1:  426:          entry_pos -= spaces + 1;  /* get rid of spaces and original quote */
+       1*:  427:          SUBMIT_FIELD(p);
+branch  0 taken 0 (fallthrough)
+branch  1 taken 1
+branch  2 taken 1 (fallthrough)
+branch  3 taken 0
+branch  4 taken 1 (fallthrough)
+branch  5 taken 0
+branch  6 taken 0 (fallthrough)
+branch  7 taken 1
+branch  8 never executed (fallthrough)
+branch  9 never executed
+branch 10 never executed (fallthrough)
+branch 11 never executed
+call   12 never executed
+branch 13 taken 1 (fallthrough)
+branch 14 taken 0
+call   15 returned 1
+    #####:  428:        } else if (is_term ? is_term(c) : c == CSV_CR || c == CSV_LF) {  /* Carriage Return or Line Feed */
+branch  0 never executed (fallthrough)
+branch  1 never executed
+call    2 never executed
+branch  3 never executed (fallthrough)
+branch  4 never executed
+branch  5 never executed (fallthrough)
+branch  6 never executed
+branch  7 never executed (fallthrough)
+branch  8 never executed
+    #####:  429:          entry_pos -= spaces + 1;  /* get rid of spaces and original quote */
+    #####:  430:          SUBMIT_FIELD(p);
+branch  0 never executed (fallthrough)
+branch  1 never executed
+branch  2 never executed (fallthrough)
+branch  3 never executed
+branch  4 never executed (fallthrough)
+branch  5 never executed
+branch  6 never executed (fallthrough)
+branch  7 never executed
+branch  8 never executed (fallthrough)
+branch  9 never executed
+branch 10 never executed (fallthrough)
+branch 11 never executed
+call   12 never executed
+branch 13 never executed (fallthrough)
+branch 14 never executed
+call   15 never executed
+    #####:  431:          SUBMIT_ROW(p, c);
+branch  0 never executed (fallthrough)
+branch  1 never executed
+call    2 never executed
+    #####:  432:        } else if (is_space ? is_space(c) : c == CSV_SPACE || c == CSV_TAB) {  /* Space or Tab */
+branch  0 never executed (fallthrough)
+branch  1 never executed
+call    2 never executed
+branch  3 never executed (fallthrough)
+branch  4 never executed
+branch  5 never executed (fallthrough)
+branch  6 never executed
+branch  7 never executed (fallthrough)
+branch  8 never executed
+    #####:  433:          SUBMIT_CHAR(p, c);
+    #####:  434:          spaces++;
+    #####:  435:        } else if (c == quote) {  /* Quote */
+branch  0 never executed (fallthrough)
+branch  1 never executed
+    #####:  436:          if (spaces) {
+branch  0 never executed (fallthrough)
+branch  1 never executed
+        -:  437:            /* STRICT ERROR - unescaped double quote */
+    #####:  438:            if (p->options & CSV_STRICT) {
+branch  0 never executed (fallthrough)
+branch  1 never executed
+    #####:  439:              p->status = CSV_EPARSE;
+    #####:  440:              p->quoted = quoted, p->pstate = pstate, p->spaces = spaces, p->entry_pos = entry_pos;
+    #####:  441:              return pos-1;
+        -:  442:            }
+    #####:  443:            spaces = 0;
+    #####:  444:            SUBMIT_CHAR(p, c);
+        -:  445:          } else {
+        -:  446:            /* Two quotes in a row */
+    #####:  447:            pstate = FIELD_BEGUN;
+        -:  448:          }
+        -:  449:        } else {  /* Anything else */
+        -:  450:          /* STRICT ERROR - unescaped double quote */
+    #####:  451:          if (p->options & CSV_STRICT) {
+branch  0 never executed (fallthrough)
+branch  1 never executed
+    #####:  452:            p->status = CSV_EPARSE;
+    #####:  453:            p->quoted = quoted, p->pstate = pstate, p->spaces = spaces, p->entry_pos = entry_pos;
+    #####:  454:            return pos-1;
+        -:  455:          }
+    #####:  456:          pstate = FIELD_BEGUN;
+    #####:  457:          spaces = 0;
+    #####:  458:          SUBMIT_CHAR(p, c);
+        -:  459:        }
+        1:  460:        break;
+    #####:  461:     default:
+    #####:  462:       break;
+        -:  463:    }
+        -:  464:  }
+        1:  465:  p->quoted = quoted, p->pstate = pstate, p->spaces = spaces, p->entry_pos = entry_pos;
+        1:  466:  return pos;
+        -:  467:}
+        -:  468:
+        -:  469:size_t
+function csv_write called 0 returned 0% blocks executed 0%
+    #####:  470:csv_write (void *dest, size_t dest_size, const void *src, size_t src_size)
+        -:  471:{
+    #####:  472:  return csv_write2(dest, dest_size, src, src_size, CSV_QUOTE);
+call    0 never executed
+        -:  473:}
+        -:  474:
+        -:  475:int
+function csv_fwrite called 0 returned 0% blocks executed 0%
+    #####:  476:csv_fwrite (FILE *fp, const void *src, size_t src_size)
+        -:  477:{
+    #####:  478:  return csv_fwrite2(fp, src, src_size, CSV_QUOTE);
+call    0 never executed
+        -:  479:}
+        -:  480:
+        -:  481:size_t
+function csv_write2 called 0 returned 0% blocks executed 0%
+    #####:  482:csv_write2 (void *dest, size_t dest_size, const void *src, size_t src_size, unsigned char quote)
+        -:  483:{
+    #####:  484:  unsigned char *cdest = dest;
+    #####:  485:  const unsigned char *csrc = src;
+    #####:  486:  size_t chars = 0;
+        -:  487:
+    #####:  488:  if (src == NULL)
+branch  0 never executed (fallthrough)
+branch  1 never executed
+    #####:  489:    return 0;
+        -:  490:
+    #####:  491:  if (dest == NULL)
+branch  0 never executed (fallthrough)
+branch  1 never executed
+    #####:  492:    dest_size = 0;
+        -:  493:
+    #####:  494:  if (dest_size > 0)
+branch  0 never executed (fallthrough)
+branch  1 never executed
+    #####:  495:    *cdest++ = quote;
+    #####:  496:  chars++;
+        -:  497:
+    #####:  498:  while (src_size) {
+branch  0 never executed
+branch  1 never executed (fallthrough)
+    #####:  499:    if (*csrc == quote) {
+branch  0 never executed (fallthrough)
+branch  1 never executed
+    #####:  500:      if (dest_size > chars)
+branch  0 never executed (fallthrough)
+branch  1 never executed
+    #####:  501:        *cdest++ = quote;
+    #####:  502:      if (chars < SIZE_MAX) chars++;
+branch  0 never executed (fallthrough)
+branch  1 never executed
+        -:  503:    }
+    #####:  504:    if (dest_size > chars)
+branch  0 never executed (fallthrough)
+branch  1 never executed
+    #####:  505:      *cdest++ = *csrc;
+    #####:  506:    if (chars < SIZE_MAX) chars++;
+branch  0 never executed (fallthrough)
+branch  1 never executed
+    #####:  507:    src_size--;
+    #####:  508:    csrc++;
+        -:  509:  }
+        -:  510:
+    #####:  511:  if (dest_size > chars)
+branch  0 never executed (fallthrough)
+branch  1 never executed
+    #####:  512:    *cdest = quote;
+    #####:  513:  if (chars < SIZE_MAX) chars++;
+branch  0 never executed (fallthrough)
+branch  1 never executed
+        -:  514:
+    #####:  515:  return chars;
+        -:  516:}
+        -:  517:
+        -:  518:int
+function csv_fwrite2 called 0 returned 0% blocks executed 0%
+    #####:  519:csv_fwrite2 (FILE *fp, const void *src, size_t src_size, unsigned char quote)
+        -:  520:{
+    #####:  521:  const unsigned char *csrc = src;
+        -:  522:
+    #####:  523:  if (fp == NULL || src == NULL)
+branch  0 never executed (fallthrough)
+branch  1 never executed
+branch  2 never executed (fallthrough)
+branch  3 never executed
+    #####:  524:    return 0;
+        -:  525:
+    #####:  526:  if (fputc(quote, fp) == EOF)
+call    0 never executed
+branch  1 never executed (fallthrough)
+branch  2 never executed
+    #####:  527:    return EOF;
+        -:  528:
+    #####:  529:  while (src_size) {
+branch  0 never executed
+branch  1 never executed (fallthrough)
+    #####:  530:    if (*csrc == quote) {
+branch  0 never executed (fallthrough)
+branch  1 never executed
+    #####:  531:      if (fputc(quote, fp) == EOF)
+call    0 never executed
+branch  1 never executed (fallthrough)
+branch  2 never executed
+    #####:  532:        return EOF;
+        -:  533:    }
+    #####:  534:    if (fputc(*csrc, fp) == EOF)
+call    0 never executed
+branch  1 never executed (fallthrough)
+branch  2 never executed
+    #####:  535:      return EOF;
+    #####:  536:    src_size--;
+    #####:  537:    csrc++;
+        -:  538:  }
+        -:  539:
+    #####:  540:  if (fputc(quote, fp) == EOF) {
+call    0 never executed
+branch  1 never executed (fallthrough)
+branch  2 never executed
+    #####:  541:    return EOF;
+        -:  542:  }
+        -:  543:
+    #####:  544:  return 0;
+        -:  545:}

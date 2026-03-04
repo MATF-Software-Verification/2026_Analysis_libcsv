@@ -1,0 +1,19 @@
+=== INTEGRATION TEST ===
+FIELD: ime
+FIELD: prezime
+FIELD: godine
+ROW END
+FIELD: Ana
+FIELD: Petrović
+FIELD: 25
+ROW END
+FIELD: Marko
+FIELD: Jovanović
+FIELD: 30
+ROW END
+FIELD: Ivan, Jr.
+FIELD: Ivić
+FIELD: 22
+ROW END
+Parsed 3 data rows (excluding header)
+Integration test passed!

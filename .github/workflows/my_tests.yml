@@ -1,0 +1,65 @@
+name: Gate
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  build-and-test:
+    name: Build and Test All
+    runs-on: ubuntu-latest
+
+    steps:
+    #  Checkout repozitorijuma i submodula
+    - name: Checkout repo with submodules
+      uses: actions/checkout@v3
+      with:
+        submodules: recursive
+
+    #  Postavi dozvole za skripte
+    - name: Set execute permissions
+      run: |
+        chmod +x unit/run_unit_test.sh
+        chmod +x integration/run_integration_test.sh
+        chmod +x clang_tidy/run_clang_tidy.sh
+        chmod +x asan/runa_asan_test.sh
+        chmod +x valgrind/run_valgrind.sh
+        chmod +x afl/run_afl++_test.sh
+
+    #  Unit test
+    - name: Run Unit Tests
+      run: |
+        cd unit
+        ./run_unit_test.sh
+
+    #  Integration test
+    - name: Run Integration Tests
+      run: |
+        cd integration
+        ./run_integration_test.sh
+
+    #  Clang-Tidy analiza
+    - name: Run Clang-Tidy
+      run: |
+        cd clang_tidy
+        ./run_clang_tidy.sh
+
+    #  AddressSanitizer testovi
+    - name: Run ASan
+      run: |
+        cd asan
+        ./runa_asan_test.sh
+
+    #  Valgrind Memcheck testovi
+    - name: Run Valgrind Memcheck
+      run: |
+        cd valgrind
+        ./run_valgrind.sh
+
+    #  AFL++ fuzzing
+    - name: Run AFL++
+      run: |
+        cd afl
+        ./run_afl++_test.sh

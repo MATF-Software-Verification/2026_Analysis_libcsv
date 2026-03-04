@@ -1,0 +1,18 @@
+=== GCOV ANALIZA libcsv.c ===
+File 'libcsv.c'
+Lines executed:38.93% of 262
+Branches executed:39.56% of 321
+Taken at least once:22.43% of 321
+Calls executed:17.95% of 39
+Creating 'libcsv.c.gcov'
+
+Lines executed:38.93% of 262
+=== GCOV ANALIZA test_csv_integration.c ===
+File 'test_csv_integration.c'
+Lines executed:68.29% of 41
+Branches executed:100.00% of 16
+Taken at least once:62.50% of 16
+Calls executed:50.00% of 22
+Creating 'test_csv_integration.c.gcov'
+
+Lines executed:68.29% of 41
