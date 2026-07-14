@@ -31,4 +31,4 @@ Cilj analize bio je da se ispita ponašanje biblioteke pri različitim ulazima i
 
 ## Zaključak
 
--Sve testirane funkcionalnosti i alati potvrđuju da je biblioteka pogodna za dalje korišćenje i integraciju u projekte koji zahtevaju rad sa CSV podacima
+Sve testirane funkcionalnosti i alati potvrđuju da je biblioteka pogodna za dalje korišćenje i integraciju u projekte koji zahtevaju rad sa CSV podacima
