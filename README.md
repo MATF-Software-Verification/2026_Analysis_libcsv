@@ -31,10 +31,4 @@ Cilj analize bio je da se ispita ponašanje biblioteke pri različitim ulazima i
 
 ## Zaključak
 
-- Biblioteka libcsv je stabilna i ne pokazuje curenje memorije pri standardnim ulazima.
-- Unit i integracioni testovi potvrđuju ispravno parsiranje polja i redova.
-- Clang-Tidy nisu otkrili kritične probleme, ali daju preporuke za stil i robustnost.
-- ASan i Valgrind pokazuju da su sve alokacije i dealokacije memorije ispravne.
-- AFL++ fuzzing omogućava otkrivanje edge-case ulaza i potencijalnih padova.
-
 -Sve testirane funkcionalnosti i alati potvrđuju da je biblioteka pogodna za dalje korišćenje i integraciju u projekte koji zahtevaju rad sa CSV podacima
