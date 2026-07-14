@@ -1,578 +1,162 @@
-# Analiza unit testiranja i pokrivenosti koda
+# Unit testovi
 
-## 1. Cilj analize
+Za proveru funkcionalne ispravnosti biblioteke razvijen je skup jedinčnih testova implementiran u programu `test_csv_unit.c`. Testovi proveravaju ispravan rad parsera nad različitim tipovima ulaznih podataka, kao i ispravnost pojedinih funkcija koje biblioteka pruža.
 
-Cilj ove analize je:
+Skup testova obuhvata sledeće scenarije:
 
-- Verifikacija funkcionalnosti CSV parsera korišćenjem unit testova  
-- Provera ispravnosti rada callback mehanizma  
-- Merenje pokrivenosti koda pomoću `gcov` alata  
-- Procena kvaliteta testova na osnovu ostvarenog procenta pokrivenosti  
+- parsiranje standardnog CSV zapisa,
+- obradu polja koja sadrže zarez unutar navodnika,
+- obradu praznih polja,
+- obradu escape navodnika,
+- obradu CRLF završetaka redova,
+- parsiranje jednog polja,
+- obradu praznog ulaza,
+- obradu razmaka oko polja,
+- obradu praznih redova,
+- obradu znaka novog reda unutar navodnika,
+- obradu razmaka nakon zatvorenih navodnika,
+- parsiranje reda sa velikim brojem kolona.
 
----
+Pored osnovnih scenarija, implementirani su i dodatni testovi kojima se proveravaju:
 
-## 2. Objašnjenje korišćenih opcija
+- promena delimitera (`csv_set_delim`),
+- promena karaktera za navodnike (`csv_set_quote`),
+- obrada velikog polja,
+- rad parsera u strogom režimu (`CSV_STRICT`),
+- funkcija za upis CSV podataka (`csv_write`),
+- getter funkcije (`csv_get_delim`, `csv_get_quote`, `csv_get_opts` i `csv_get_buffer_size`).
 
-### 2.1 GCC opcije za kompajliranje sa pokrivenošću koda
-
-| Opcija | Opis |
-|--------|------|
-| `-Wall` | Aktivira upozorenja za sve uobičajene probleme u kodu. |
-| `-Wextra` | Aktivira dodatna upozorenja koja nisu obuhvaćena sa `-Wall`. |
-| `-fprofile-arcs` | Omogućava instrumentaciju za GCOV – beleži tok izvođenja programa. |
-| `-ftest-coverage` | Generiše dodatne fajlove (`.gcno`, `.gcda`) za pokrivenost koda. |
-
-### 2.2 GCOV opcije
-
-| Opcija | Opis |
-|--------|------|
-| `-b` | Prikazuje branch coverage tj. pokrivenost logičkih grana (`if`, `switch`). |
-| `-c` | Prikazuje call coverage tj. koliko je funkcijskih poziva izvršeno. |
-
----
-
-## 3. Pokretanje unit testa
-
-Program je kompajliran sa uključenim opcijama za pokrivenost:
-
-`gcc -Wall -Wextra -fprofile-arcs -ftest-coverage libcsv.c test_csv_unit.c -o unit`
+Nakon izvršavanja svih testova dobijen je rezultat da su svi testovi uspešno prošli, čime je potvrđena funkcionalna ispravnost implementiranih scenarija.
 
 ---
 
-## 4. Dobijeni izlaz
+# GCov analiza
 
-FIELD: a
-FIELD: b
-FIELD: c
-ROW END: 
+Nakon uspešnog izvršavanja jedinčnih testova korišćen je alat **GCov** za analizu pokrivenosti izvornog koda biblioteke `libcsv.c`.
 
-FIELD: 1
-FIELD: 2
-FIELD: 3
-ROW END: 
+Dobijeni rezultati pokrivenosti su:
 
-FIELD: quoted,field
-FIELD: 4
-FIELD: 5
-ROW END: EOF
-Parsed 30 characters
-All unit tests OK
+| Metrika | Vrednost |
+|---------|---------:|
+| Pokrivenost linija (Lines executed) | **67.18%** |
+| Izvršene grane (Branches executed) | **67.60%** |
+| Grane izvršene bar jednom (Taken at least once) | **42.99%** |
+| Izvršeni pozivi funkcija (Calls executed) | **30.77%** |
 
-### 4.1 Tumačenje rezultata:
+Rezultati pokazuju da jedinčni testovi pokrivaju više od dve trećine izvornog koda biblioteke, kao i značajan deo grananja parsera. Najveća pokrivenost ostvarena je u funkcijama koje učestvuju u obradi CSV ulaza, dok pojedine pomoćne funkcije i ređe izvršavane grane nisu obuhvaćene postojećim skupom testova.
 
-- Parser je uspešno obradio 3 reda CSV podataka.
-- Ispravno su prepoznata obična polja, numerička polja i quoted polja sa zarezom.
-- Callback funkcije za polja i kraj reda su pozvane odgovarajući broj puta.
-- Program je završio bez greške.
+Dobijena pokrivenost predstavlja dobru osnovu za dalju analizu kvaliteta biblioteke, koja je zatim proširena korišćenjem alata **Valgrind Memcheck**, **AddressSanitizer**, **Clang-Tidy**, **Lizard** i **AFL++**.
 
-- Zaključak: osnovna funkcionalnost parsera radi ispravno.
-    
----
+## Clang-Tidy analiza
 
-## 5. GCOV analiza pokrivenosti
+Za statičku analizu izvornog koda korišćen je alat Clang-Tidy.
+Analiza je izvršena nad fajlom `libcsv.c`, a rezultati su sačuvani u
+fajlu `clang_tidy.txt`.
 
-Pokretanje gcov alata:
+Clang-Tidy je prijavio ukupno 16 upozorenja. Sva upozorenja pripadaju istoj
+kategoriji: `clang-analyzer-core.NULLDereference`
 
-`gcov -b -c unit-test_csv_unit.gcno`
+Upozorenja se odnose na moguće dereferenciranje pokazivača `entry_buf`
+sa vrednošću `NULL` u okviru makroa `SUBMIT_FIELD` i `SUBMIT_CHAR`, koji se
+koriste za upis podataka u interni bafer parsera.
 
-### 5.1 Rezultati za test_csv_unit.c:
+Primer prijavljene lokacije:
 
-Lines executed:86.36% of 22
-Branches executed:100.00% of 6
-Taken at least once:66.67% of 6
-Calls executed:81.82% of 11
 
-### 5.2 Analiza pokrivenosti
+`((p)->entry_buf[entry_pos]) = '\0';`
 
-Line coverage – 86.36%
-Većina linija je izvršena. Neizvršene linije odnose se na obradu grešaka (NULL polja, neuspeh inicijalizacije parsera).
+Ova upozorenja predstavljaju potencijalne putanje koje je statički analizator
+identifikovao, ali nisu potvrđena tokom dinamičkog testiranja. Valgrind
+Memcheck, AddressSanitizer i fuzz testiranje nisu pronašli greške vezane za
+nevalidne pristupe memoriji, zbog čega se ova upozorenja tretiraju kao
+potencijalni rizik, a ne kao potvrđena greška u implementaciji.
 
-Branch coverage – 100% analizirano, 66.67% izvršeno
-Sve logičke grane su analizirane, ali nisu sve izvršene u pozitivnim test slučajevima.
 
-Call coverage – 81.82%
-Većina funkcijskih poziva je izvršena, osim onih u granama za obradu grešaka.
+# Ciklomatska složenost
 
----
+Alatom **lizard** analizirana je ciklomatska složenost biblioteke **libcsv** na osnovu njenog izvornog koda. 
+Alat analizira strukturu programa i na osnovu broja grananja, petlji i drugih kontrolnih tokova određuje složenost pojedinačnih funkcija.
 
-## 6. Procena kvaliteta testova
+Ciklomatska složenost predstavlja meru broja nezavisnih putanja kroz programski kod. Veća vrednost ukazuje na veći broj mogućih tokova izvršavanja, što može otežati testiranje, održavanje i razumevanje koda.
 
-Testovi pokrivaju:
+Analiza je izvršena pokretanjem skripte `run_lizard.sh`, koja pokreće alat lizard i rezultat analize upisuje u izveštaj `lizard_report.txt`, dok se dodatno generiše HTML izveštaj koji omogućava pregledniji prikaz rezultata analize.
 
-- Osnovno parsiranje CSV podataka
-- Obradu quoted polja
-- Obradu više redova
-- Obradu završetka fajla (EOF)
-- Rad callback funkcija
+HTML izveštaj sadrži tabelarni prikaz analiziranih funkcija, njihove linije koda, broj parametara, broj tokena, kao i vrednosti ciklomatske složenosti.
 
-Testovi ne pokrivaju:
+Na osnovu generisanog izveštaja vidi se da biblioteka sadrži ukupno **23 funkcije**, sa prosečnom vrednošću ciklomatske složenosti **5.5**. 
+Prosečan broj linija koda po funkciji iznosi **14.9**, dok je ukupan broj linija koda analiziranih funkcija **374**.
 
-- Grešku pri inicijalizaciji parsera
-- NULL vrednosti polja
-- Ekstremne ili neispravne ulaze
+Najveću ciklomatsku složenost ima funkcija: `csv_parse` koja sadrži:
+- NLOC: 132
+- CCN: 49
+- broj parametara: 4
+- dužina funkcije: 149 linija
 
----
+Ova funkcija predstavlja glavni deo biblioteke jer obavlja parsiranje CSV ulaza i obrađuje različite slučajeve kao što su razdvajanje polja, obrada navodnika, escape karaktera, promene stanja parsera i završetak redova. 
+Zbog velikog broja mogućih stanja parsera i velikog broja grananja očekivano je da upravo ova funkcija ima najveću ciklomatsku složenost.
 
-## 7. Zaključak
+Pored funkcije `csv_parse`, ostale funkcije biblioteke imaju značajno manju složenost. 
+Većina pomoćnih funkcija, kao što su funkcije za podešavanje parametara parsera (`csv_set_opts`, `csv_set_delim`, `csv_set_quote`) i funkcije za oslobađanje memorije (`csv_free`), imaju ciklomatsku složenost između 1 i 4, što ukazuje na jednostavniju strukturu.
 
-- CSV parser funkcioniše ispravno za tipične ulazne podatke.
-- Ostvarena je visoka pokrivenost linija (86.36%).
-- Sve grane su analizirane, ali nisu sve izvršene tokom testova.
-- Testovi pokrivaju glavni tok izvršavanja programa, ali za potpunu validaciju bi bilo potrebno dodati testove koji simuliraju greške i specijalne slučajeve.
+Lizard je prijavio jednu funkciju koja prelazi zadati prag složenosti: **cyclomatic_complexity > 15**
 
----
+To je funkcija `csv_parse` sa ciklomatskom složenošću 49. 
+Iako je vrednost relativno visoka, ona je očekivana jer ova funkcija implementira kompletnu logiku CSV parsera i mora da podrži veliki broj različitih ulaznih slučajeva.
 
-## 8. Preporuka
+Dobijeni rezultati pokazuju da je najveći deo kompleksnosti biblioteke koncentrisan u jednoj centralnoj funkciji, dok su ostale funkcije jednostavne i lako održive.
 
-- Dodati testove za negativne slučajeve i greške pri inicijalizaciji parsera.
 
-# Analiza integracionog testiranja i pokrivenosti koda
+## Valgrind Memcheck analiza
 
-## 1. Cilj analize
+Alatom Valgrind Memcheck izvršena je analiza upravljanja memorijom tokom
+izvršavanja unit testova biblioteke libcsv. Test je pokrenut sa opcijama
+`--leak-check=full` i `--show-leak-kinds=all`, čime je omogućena detaljna
+provera curenja memorije i nepravilnog korišćenja memorijskih resursa.
 
-Cilj ove analize je:
+Tokom inicijalnog pokretanja pronađena je greška korišćenja neinicijalizovane
+vrednosti u test funkciji `write_test`, gde izlazni bafer nije bio pravilno
+terminisan nul-karakterom pre poziva `printf`. Nakon korekcije testa,
+ponovljenom analizom nisu pronađene greške.
 
-- Proveriti funkcionalnost CSV parsera kroz integracione testove 
-- Validacija obrade različitih tipova polja i redova 
-- Merenje pokrivenosti koda pomoću `gcov` alata 
-- Procena kvaliteta integracionih testova na osnovu procenta pokrivenosti 
+Konačni rezultat Valgrind analize je:
 
----
+- 19 izvršenih alokacija i 19 oslobađanja memorije,
+- 0 bajtova memorije ostalo zauzeto nakon završetka programa,
+- 0 detektovanih grešaka.
 
-## 2. Objašnjenje korišćenih opcija
+Dobijeni rezultat potvrđuje da biblioteka tokom izvršavanja testiranih
+funkcionalnosti nema uočene probleme sa curenjem memorije niti sa
+neispravnim pristupom memorijskim lokacijama.
 
-### 2.1 GCC opcije za kompajliranje sa pokrivenošću koda
 
-| Opcija | Opis |
-|--------|------|
-| `-Wall` | Aktivira upozorenja za sve uobičajene probleme u kodu. |
-| `-Wextra` | Aktivira dodatna upozorenja koja nisu obuhvaćena sa `-Wall`. |
-| `-fprofile-arcs` | Omogućava instrumentaciju za GCOV – beleži tok izvršenja programa. |
-| `-ftest-coverage` | Generiše fajlove (`.gcno`, `.gcda`) za analizu pokrivenosti koda. |
+## AddressSanitizer analiza
 
-### 2.2 GCOV opcije
+Za proveru memorijske bezbednosti korišćen je alat AddressSanitizer (ASan).
+Biblioteka `libcsv` je kompajlirana sa opcijom `-fsanitize=address`, nakon
+čega je izvršen postojeći skup jedinčnih testova.
 
-| Opcija | Opis |
-|--------|------|
-| `-b` | Prikazuje branch coverage tj. pokrivenost logičkih grana (`if`, `switch`). |
-| `-c` | Prikazuje call coverage tj. koliko je funkcijskih poziva izvršeno. |
+Tokom izvršavanja svih testova AddressSanitizer nije detektovao greške
+vezane za upravljanje memorijom. Nisu pronađena prekoračenja bafera,
+korišćenje oslobođene memorije niti nevalidni pristupi memoriji.
 
----
+Rezultat analize:
+`ASan nije pronašao memorijske greške.`
 
-## 3. Pokretanje integracionog testa
+## AFL++ fuzz testiranje
 
-Kompajliranje i pokretanje:
+Za dinamičko testiranje biblioteke korišćen je alat AFL++ (American Fuzzy Lop Plus Plus). Kao početni skup ulaza pripremljeno je više CSV fajlova koji obuhvataju različite karakteristične slučajeve, kao što su standardni CSV zapis, prazna polja, navodnici.
 
-`gcc -Wall -Wextra -fprofile-arcs -ftest-coverage libcsv.c test_csv_integration.c -o integration`
+Test program učitava CSV fajl koji AFL++ prosledi kao ulaz, nakon čega njegov sadržaj prosleđuje funkciji `csv_parse`. AFL++ zatim automatski generiše veliki broj novih ulaza mutacijom početnih *seed* fajlova i izvršava parser nad svakim od njih, sa ciljem da istraži što veći broj putanja izvršavanja.
 
----
+Rezultati fuzz testiranja nalaze se u direktorijumu `findings`, gde se posebno izdvajaju:
+- `queue` – skup ulaza koje je AFL++ generisao i koji su doveli do novih ili zanimljivih putanja izvršavanja,
+- `crashes` – ulazi koji izazivaju pad programa,
+- `hangs` – ulazi koji dovode do zastoja ili prekoračenja vremenskog ograničenja.
 
-## 4. Dobijeni izlaz
+Tokom sprovedenog fuzz testiranja nisu pronađeni ulazi koji izazivaju pad programa niti zastoj u izvršavanju, odnosno direktorijumi `crashes` i `hangs` ostali su prazni. Istovremeno, direktorijum `queue` sadrži veliki broj automatski generisanih ulaza, što pokazuje da je AFL++ uspešno pronašao nove putanje izvršavanja i povećao pokrivenost testiranja parsera.
 
-FIELD: ime
-FIELD: prezime
-FIELD: godine
-ROW END
-FIELD: Ana
-FIELD: Petrović
-FIELD: 25
-ROW END
-FIELD: Ivan, Jr.
-FIELD: Marković
-FIELD: 30
-ROW END
-Parsed 3 data rows (excluding header)
-Integration test passed!
+# Zaključak analize
 
-### 4.1 Tumačenje rezultata:
+U okviru rada izvršena je sveobuhvatna analiza biblioteke **libcsv** primenom više metoda za proveru kvaliteta i pouzdanosti softvera.
 
-- Parser je uspešno obradio 3 reda CSV podataka (uključujući quoted polja sa zarezom).
-- Callback funkcije za polja i kraj reda su pozvane odgovarajući broj puta.
-- Program je završio bez greške, što potvrđuje da osnovna integracija funkcioniše.
-
----
-
-## 5. GCOV analiza pokrivenosti
-
-Pokretanje gcov alata:
-
-`gcov -b -c integration-libcsv.gcno`
-`gcov -b -c integration-test_csv_integration.gcno`
-
-### 5.1 Rezultati za libcsv.c:
-
-Lines executed:38.93% of 262
-Branches executed:39.56% of 321
-Taken at least once:22.43% of 321
-Calls executed:17.95% of 39
-
-### 5.2 Analiza pokrivenosti
-
-Line coverage - 78.5%
-Većina linija parsera je izvršena, neizvršene linije odnose se na obradu grešaka.
-
-Branch coverage - 66.7% 
-Sve grane su analizirane, ali nisu sve izvršene u pozitivnim test slučajevima.
-
-Call coverage - 81.8%
-Većina funkcija je pozvana, osim onih u granama za greške.
-
-### 5.3 Rezultati za test_csv_integratrion.c:
-
-Lines executed:68.29% of 41
-Branches executed:100.00% of 16
-Taken at least once:62.50% of 16
-Calls executed:50.00% of 22
-
-### 5.2 Analiza pokrivenosti
-
-Line coverage - 81.82% 
-- Većina linija koda je izvršena tokom integracionog testa. Neizvršene linije se odnose na obradu grešaka i izuzetaka (NULL polja, neuspeh inicijalizacije parsera).
-
-Branch coverage - 75% 
-- Sve grane su analizirane, ali nisu sve izvršene u pozitivnim scenarijima; grane koje vode do grešaka nisu aktivirane.
-
-Call coverage - 85%
-- Većina funkcija je pozvana tokom testa, osim funkcija koje se koriste za greške ili retke edge case situacije.
-
-Zaključak: 
-- Integracioni test uspešno pokriva osnovni tok CSV parsiranja, uključujući multiple redove i quoted polja, ali za potpunu pokrivenost potrebno je dodati testove za negativne i ekstremne ulaze.
-
----
-
-## 6. Procena kvaliteta testova
-
-Integracioni testovi pokrivaju:
-
-- Parsiranje CSV podataka sa zaglavljem i više redova
-- Obradu quoted polja i polja sa zarezom
-- Funkcionalnost callback mehanizma
-- Kraj fajla (EOF)
-
-Integracioni testovi ne pokrivaju:
-
-- Greške pri inicijalizaciji parsera
-- NULL vrednosti polja
-- Ekstremne ili neispravne ulaze
-
----
-
-## 7. Zaključak
-
-- CSV parser funkcioniše ispravno za tipične ulazne podatke.
-- Ostvarena je visoka pokrivenost linija i funkcija, ali nisu sve grane izvršene.
-- Testovi pokrivaju glavni tok izvršavanja, ali nisu obuhvatili negativne scenarije i edge case-ove.
-
----
-
-## 8. Preporuka
-
-- Dodati integracione testove za negativne slučajeve i greške pri inicijalizaciji parsera.
-
-# Analiza projekta sa Clang-Tidy
-
-## 1. Cilj analize
-
-Clang-Tidy je statički analizator koda za C/C++ projekte koji detektuje moguće runtime greške, probleme sa pokazivačima, potencijalne null dereference, kao i druge sigurnosne i stilističke probleme. Cilj korišćenja Clang-Tidy u ovom projektu bio je da se:
-
-- Otkrivaju runtime problemi i potencijalne null pointer dereference pre izvršavanja koda.
-- Poboljša stabilnost i sigurnost biblioteke `libcsv`.
-- Identifikuju problematični delovi koda vezani za upravljanje memorijom i kontrolu toka programa.
-- Olakša refaktorisanje i održavanje koda.
-
-Analiza pomaže programerima da pravovremeno otkriju i isprave kritične greške, smanjujući rizik od runtime crash-eva i nepredviđenog ponašanja programa.
-
----
-
-## 2. Objašnjenje korišćenih opcija
-
-| Opcija | Opis |
-|--------|------|
-| `clang-tidy libcsv.c csv.h` | Pokreće analizu na fajlovima `libcsv.c` i `csv.h`. |
-| `--` | Separator između Clang-Tidy opcija i opcija kompajlera. |
-| `-I.` | Uključuje trenutni direktorijum kao putanju za header fajlove (include path). |
-| `> clang_tidy_results/clang_tidy.txt` | Preusmerava kompletan izlaz analize u fajl unutar direktorijuma za rezultate. |
-
-Ove opcije omogućavaju detaljnu statičku analizu ključnih fajlova projekta sa fokusom na sigurnost i runtime greške.
-
----
-
-## 3. Rezultati analize
-
-- Ukupan broj upozorenja: 32  
-  - `libcsv.c`: 16 upozorenja  
-  - `csv.h`: 16 upozorenja  
-
-- Tipovi uočenih problema:
-  - Null pointer dereference (`clang-analyzer-core.NullDereference`)
-  - Pretpostavke o validnosti pokazivača korišćenjem `assert` i `if` provera
-  - Problemi u kontroli toka programa kroz `if`, `switch` i `while`
-  - Potencijalna neinicijalizovana polja i pristupi memoriji pre alokacije
-
-- Izlaz analize je sačuvan u `clang_tidy_results/clang_tidy.txt`.
-
----
-
-## 4. Zaključak
-
-Analiza sa Clang-Tidy pokazuje da kod projekta:
-
-- Sadrži upozorenja koja ukazuju na potencijalne null pointer dereference, što može izazvati runtime greške.  
-- Većina upozorenja se odnosi na neophodnost dodatnih provera validnosti pokazivača i sigurnije upravljanje memorijom.  
-- Refaktorisanje i implementacija dodatnih provera može značajno poboljšati stabilnost biblioteke `libcsv`.  
-- Preporučuje se kombinovanje statičke analize sa unit testovima kako bi se osigurala potpuna pokrivenost i kvalitet koda.  
-
-Rezultati analize su sačuvani u tekstualnom fajlu i mogu se dalje procesirati za generisanje PDF ili HTML izveštaja.
-
-# Dinamička analiza – AddressSanitizer (ASan)
-
-## 1. Podešavanje okruženja i kompilacija
-
-Biblioteka **libcsv** testirana je korišćenjem AddressSanitizer alata ugrađenog u GCC kompajler.
-
-Kompilacija je izvršena sledećom komandom:
-
-`gcc -fsanitize=address -g test_csv_unit.c libcsv.c -o test`
-
-| Opcija | Opis |
-|--------|------|
-| `-fsanitize=address` | Aktivira AddressSanitizer (ASan) za detekciju memorijskih grešaka tokom izvršavanja programa (heap/stack overflow, use-after-free, double free, invalid read/write). |
-| `-g` | Dodaje debug simbole u izvršni fajl, omogućavajući precizne izveštaje sa linijama koda kada ASan detektuje grešku. |
-| `test_csv_unit.c` | Test program koji pokreće različite test scenarije biblioteke libcsv. |
-| `libcsv.c` | Izvorni kod biblioteke koja se analizira. |
-| `-o test` | Naziv generisanog izvršnog fajla. |
-
-## Test 1 - Dugačko polje (realloc stres test)
-
-Ulaz je sadržao veoma dugo polje (više hiljada karaktera)
-
-Cilj:
-- Proveriti stabilnost dinamičkog proširenja bafera
-- Detektovati potencijalni buffer overflow
-
-Rezultat:
-- Parser je uspešno obradio ulaz
-- Nije došlo do rušenja programa
-- AdressSanitizer nije prijavio memorijske greške
-
-Zaključak:
-- Dinamičko upravljanje memorijom (realloc) funkcioniše ispravno u testiranom scenariju
-
-## Test 2 - Nezatvoreni navodnici
-
-Ulaz:
-`"abc,def\n`
-
-Cilj: 
-- Testirati ponašanje parsera pri sintaksnoj grešci
-
-Rezultat:
-- Parser nije emitovao završno polje
-- Nije došlo do crash-a
-- ASan nije prijavio greške
-
-Zaključak:
-- Biblioteka stavilno obrađuje nedovršene quoted sekvence bez memorijskih problema
-
-## Test 3 - Escaped navodnici
-
-Ulaz:
-
-`"aaa""bbb",ccc\n`
-
-Cilja:
-- Testirrati obradu escaped navodnika ("")
-- Proveriti stabilnost pri obradi quoted polja
-
-Rezultati:
-- Polje je pravilno parsirano
-- Nije detektovan buffer overflow
-- ASan nije prijavio greške
-
-Zaključak:
-- Implementacija quoted polja i escape maehanizma funkcioniše ispravno u testiranom okruženju
-
-## Test 4 - Ugrađeni NULL bajt
-
-Ulaz je sadržao `\0` unutar podataka
-
-Cilj:
-- Proveriti da li biblioteka zavisi od `strlen`
-- Testirati otpornost na binarne podatke
-
-Rezultat:
-- Nije došlo do rušenja programa
-- Nije prijavljen invalid read/write operacija
-- ASan nije detektovao greške
-
-Zaključak:
-- Biblioteka može da obradi podatke koji sadrže NULL bajt bez memorijske korupcije
-
-## Test 5 - Jednostavan fuzz test
-
-Generisan je niz nasumičnih bajtova i prosleđen parseru
-
-Cilj:
-- Izazvati neočekivana stanja parsera
-- Testirati robusnost implementacije
-
-Rezultat:
-- Program se nije srušio
-- Nije detektovan heap overflow
-- Nije detektovan use-after-free
-- Nije prijavljen double free
-
-Zaključak:
-- Parser pokazuje dobru stabilnost na slučajno generisane ulaze u okviru sprovedenog testiranja
-
----
-
-## Opšti zaključak:
-Na osnovu sprovedenih testova može se zaključiti:
-
-- Nisu detektovane memorijske greške tipa heap overflow, stack overflow, use-after-free ili double free
-- Dinamičko upravljanje memorijom funkcioniše stabilno u testiranim scenarijima
-- Biblioteka pokazuje otpornost na granične i nekorektne ulaze
-
-# Libcsv Valgrind Memcheck test
-
-Ovaj izveštaj dokumentuje testiranje `libcsv` parsera korišćenjem **Valgrind Memcheck** alata.
-
-Cilj:
-- Otkrivanje curenja memorije (memory leaks) – da li postoji memorija koja je alocirana, ali nije oslobođena
-- Detekcija neinicijalizovanih promenljivih koje se koriste prilikom izvršavanja programa
-- Pronalaženje pristupa van dodeljenog opsega memorije (out-of-bounds read/write).
-- Provera ispravnog oslobađanja memorije kod dinamički alociranih resursa u programu.
-
----
-
-## 1. Kompajliranje
-
-`gcc -g test_csv_valgrind.c libcsv.c -o test_valgrind`
-
-### 1.1 Opis opcija
-
- Opcija | Opis |
-|--------|------|
-| `-g` | Dodaje debug simbole u izvršni fajl, omogućavajući precizne izveštaje sa linijama koda kada ASan detektuje grešku. |
-
-
-
-## 2. Pokretanje testa sa Valgrind
-
-`valgrind --leak-check=full --show-leak-kinds=all --error-exitcode=1 ./test_valgrind`
-
-### 2.1 Opis opcija
-
- Opcija | Opis |
-|--------|------|
-| `--leak-check=full` | Detektuje sve curenje memorije i prikazuje detaljne informacije o alokacijama koje nisu oslobođene. |
-| `--show-leak-kinds=all` | Prikazuje sve tipove curenja memorije: definite, indirect i possible leaks. |
-| `--error-exitcode=1` | Postavlja izlazni kod programa na 1 ako Valgrind detektuje bilo kakvu grešku u memoriji. |
-
-
-## 3. Modifikacije u testu za Valgrind
-
-Za Valgrind je test modifikovan da:
-- Ne ispisuje ogromna polja (long field test) kako izlaz ne bi bio nečitljiv.
-- Fuzz test radi u utišanom režimu (verbose = 0).
-- Ostale test sekcije ostaju iste (nezatvoreni navodnici, escaped quotes, embedded NULL).
-
-## 4. Primer izlaza
-
-==978761== Memcheck, a memory error detector
-==978761== Copyright (C) 2002-2022, and GNU GPL'd, by Julian Seward et al.
-==978761== Using Valgrind-3.22.0 and LibVEX; rerun with -h for copyright info
-==978761== Command: ./test_valgrind
-==978761== 
-==978761== HEAP SUMMARY:
-==978761==     in use at exit: 0 bytes in 0 blocks
-==978761==   total heap usage: 783 allocs, 783 frees, 39,287,584 bytes allocated
-==978761== 
-==978761== All heap blocks were freed -- no leaks are possible
-==978761== 
-==978761== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
-
-## 5. Zaključak:
-
-- Test nije detektovao curenje memorije
-- Sve alokacije su ispravno oslobođene
-- Test je validan i ne zahteva dodatnu proveru pokrivenosti koda (gcov/lcov) za osnovnu verifikaciju
-
-# AFL++ (Fuzzing)
-
-## 1. Cilj analize:
-- Automatski generisati veliki broj različitih CSV inputa.
-- Pronaći potencijalne bugove, crash-eve ili segfault-ove parsera.
-- Testirati robusnost parsera u edge-case situacijama, uključujući: duge stringove, prazna polja, specijalne karaktere i escape sekvence
-- Potvrditi stabilnost i sigurnost biblioteke libcsv.
-
-## 2. Kompilacija i pokretanje AFL++
-
-`afl-clang-fast -o test_afl test_csv_afl.c libcsv.c`
-
-| Opcija | Opis |
-|--------|------|
-| `afl-clang-fast` | LLVM-based instrumentirani kompajler za AFL++ koji omogućava praćenje izvršavanja programa i generisanje fuzz inputa |
-
-`export AFL_I_DONT_CARE_ABOUT_MISSING_CRASHES=1`
-
-Opis | Onemogućava probleme sa core dump podešavanjima sistema, tako da AFL++ ne promaši kratke procese ili crash-eve |
-
-`export AFL_SKIP_CPUFREQ=1`
-
-Opis | Preskače proveru CPU frequency scaling-a i moguće performansne upozorenja |
-
-`afl-fuzz -i seeds -o findings -- ./test_afl @@`
-
-| Opcija | Opis |
-|--------|------|
-| `afl-fuzz` | Glavni AFL++ fuzzer alat koji izvršava testirani program sa generisanim inputom |
-| `-i seeds` | Folder sa početnim seed fajlovima (ulazni primeri CSV-a) |
-| `-o findings` | Folder u koji se čuvaju rezultati fuzzinga: queue/, crashes/, hangs/ |
-| `-- ./test_afl @@` | Komanda koja se izvršava za svaki fuzz input; @@ se zamenjuje sa fajlom generisanim od strane AFL++ |
-
-## 3. Seed fajlovi korišćeni za fuzzing:
-
-**test1.csv**
-ime,prezime,godine
-Ana,Petrović,25
-Marko,Jovanović,30
-"Ivan, Jr.",Ivić,22
-
-**test2.csv**
-ime,prezime,godine
-Ana,,25
-,Marko,30
-"Ivan, Jr.",,22
-"Milica; M.",Popović,31
-
-**test3.csv**
-ime,prezime,godine
-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA,Petrović,25
-Marko,BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB,30
-Ivan,Ivić,CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC,22
-
-**test4.csv**
-ime,prezime,godine
-Ana,"Petrović\nPetrov",25
-Marko,"Jovanović\tJovo",30
-"Ivan, Jr.","Ivić\"Iv",22
-Jovana,Đorđević,27
-
-## 4. Rezultati
-
-Folder **findings** sadrži:
-- crashes/ - potencijalni crash fajlovi (trenutno prazno)
-- hangs/ - inputi koji izazivaju dugotrajno čekanje (trenutno prazno)
-- queue/ - inputi koje AFL++ koristi za dalje fuzzing iteracije
-Ostali fajlovi: 
-- cmdline - komanda kojom je pokrenut fuzzer
-- fuzzer_setup - info o konfiguraciji fuzzera na startu
-- fuzzer_stats - koliko inputa je testirano, koliko chrash-eva, koliko hangs
-- plot_data - podaci koji se koriste za generisanje grafika napretka fuzz testa
-- fuzz_bitmap - interni bitmap koji AFL++ koristi da prati korivene grane koda
-
-## 5. Zaključak
-- Trenutni parser ne pokazuje crash-eve ni hang-ove sa početnim seed fajlovima. 
-- Fuzzing je pokrenut i može se ostaviti da radi duže za potencijalno otkrivanje ranjivosti
+Na osnovu sprovedenih analiza može se zaključiti da biblioteka **libcsv** predstavlja stabilnu i kvalitetno implementiranu biblioteku za obradu CSV podataka. Iako postoji prostor za povećanje pokrivenosti testovima i dodatno razmatranje upozorenja prijavljenih statičkom analizom, nijedan od primenjenih dinamičkih alata nije otkrio greške koje bi ukazivale na probleme u upravljanju memorijom ili stabilnosti izvršavanja.
