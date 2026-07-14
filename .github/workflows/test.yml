@@ -1,0 +1,79 @@
+name: Gate
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+
+jobs:
+  build-and-test:
+
+    name: Build and Test All
+    runs-on: ubuntu-latest
+
+    steps:
+
+    - name: Checkout repo with submodules
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+
+    - name: Install dependencies
+      run: |
+        sudo apt update
+        sudo apt install -y \
+          gcc \
+          make \
+          clang-tidy \
+          valgrind \
+          afl++
+        pip3 install lizard
+
+
+    - name: Set execute permissions
+      run: |
+        chmod +x unit/run_unit_test.sh
+        chmod +x clang_tidy/run_clang_tidy.sh
+        chmod +x lizard/run_lizard.sh
+        chmod +x asan/run_asan_test.sh
+        chmod +x valgrind/run_valgrind_test.sh
+        chmod +x afl/run_afl_test.sh
+
+
+    - name: Run Unit Tests
+      run: |
+        cd unit
+        ./run_unit_test.sh
+
+
+    - name: Run Clang-Tidy
+      run: |
+        cd clang_tidy
+        ./run_clang_tidy.sh
+
+
+    - name: Run Lizard
+      run: |
+        cd lizard
+        ./run_lizard.sh
+
+
+    - name: Run ASan
+      run: |
+        cd asan
+        ./run_asan_test.sh
+
+
+    - name: Run Valgrind
+      run: |
+        cd valgrind
+        ./run_valgrind_test.sh
+
+
+    - name: Run AFL++
+      run: |
+        cd afl
+        ./run_afl_test.sh
