@@ -28,6 +28,7 @@ fi
 echo "Pokretanje AFL++ fuzzing testa..."
 
 afl-fuzz \
+    -V 60 \
     -i "$SEEDS_DIR" \
     -o "$OUTPUT_DIR" \
     -- ./test_afl @@
