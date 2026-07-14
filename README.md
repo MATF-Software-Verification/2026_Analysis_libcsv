@@ -28,41 +28,6 @@ libcsv je mala i brza biblioteka za parsiranje i generisanje CSV podataka u C-u.
 
 Cilj analize bio je da se ispita ponašanje biblioteke pri različitim ulazima i da se otkriju potencijalni problemi sa memorijom, greške u parsiranju i stabilnost programa.
 
----
-
-## Korišćeni alati i uputstva za reprodukciju
-
-### 1. Unit test i integracioni test
-
-- Testovi pokrivaju funkcionalnosti parsiranja polja i redova, kao i interakciju više funkcija. 
-- Skripte koje pokreću sve funkcionalne testove
-[unit] ./run_unit_test.sh
-[integration] ./run_integration_test.sh
-
-### 2. Clang-tidy
-
-- Analiza i preporuke za refaktor koda.
-- Skripta za pokretanje: ./run_clang_tidy.sh
-
-### 3. AdressSanitizer (ASan)
-
-- Detekcija buffer overflow, use-after-free, neinicijalizovane memorije
-- Skripta za pokretanje: ./runa_asan_test.sh
-
-### 4. Valgrind (Memcheck)
-
-- Praćenje memorijskih alokacija i provera curenja memorije
-- Skripta za pokretanje: ./run_valgrind_test.sh
-
-### 5. AFL++ (Fuzzing)
-
-- Instrumentacija binarnog fajla i automatsko generisanje ulaza
-- Skripta za pokretanje: ./run_afl++_test.sh
-
-### Napomena: 
-- Za reprodukciju rezultata, dovoljno je pokrenuti odgovarajuću skriptu u terminalu, pri čemu skripte automatski uključuju sve potrebne opcije i parametre. Rezultati se generišu u folderima definisanim unutar svake skripte
-
----
 
 ## Zaključak
 
