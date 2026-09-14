@@ -1,11 +1,9 @@
 #!/bin/bash
 
-LIBCSV_DIR="../libcsv"
-
 gcc -fsanitize=address -g \
     ../unit/test_csv_unit.c \
-    "$LIBCSV_DIR/libcsv.c" \
-    -I"$LIBCSV_DIR" \
+    ../libcsv/libcsv.c \
+    -I../libcsv \
     -o test_asan
 
 if [ $? -ne 0 ]; then
