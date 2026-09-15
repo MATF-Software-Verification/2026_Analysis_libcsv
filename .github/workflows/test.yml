@@ -38,7 +38,7 @@ jobs:
         chmod +x unit/run_unit_test.sh
         chmod +x clang_tidy/run_clang_tidy.sh
         chmod +x lizard/run_lizard.sh
-        chmod +x asan/run_asan_test.sh
+        chmod +x flawfinder/run_flawfinder.sh
         chmod +x valgrind/run_valgrind_test.sh
         chmod +x afl/run_afl_test.sh
 
@@ -61,10 +61,10 @@ jobs:
         ./run_lizard.sh
 
 
-    - name: Run ASan
+    - name: Run FlawFinder
       run: |
-        cd asan
-        ./run_asan_test.sh
+        cd flawfinder
+        ./run_flawfinder.sh
 
 
     - name: Run Valgrind
