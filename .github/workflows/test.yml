@@ -30,7 +30,7 @@ jobs:
           clang-tidy \
           valgrind \
           afl++
-        pip3 install lizard
+        pip3 install lizard flawfinder
 
 
     - name: Set execute permissions
