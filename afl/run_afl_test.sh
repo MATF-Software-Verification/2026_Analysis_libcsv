@@ -7,13 +7,10 @@ SEEDS_DIR="seeds"
 # Folder gde će AFL++ čuvati rezultate
 OUTPUT_DIR="findings"
 
-# Postavljanje okruženja da ignoriše upozorenja o core dumps
+# Podešavanje okruženja da ignoriše upozorenja o core dumps
 export AFL_I_DONT_CARE_ABOUT_MISSING_CRASHES=1
+export AFL_SKIP_CPUFREQ=1  # (može usporiti fuzzing ako nije performance)
 
-# Preskačemo proveru CPU scaling governor-a (može usporiti fuzzing ako nije performance)
-export AFL_SKIP_CPUFREQ=1
-
-# Kompajliranje instrumentisanog izvršnog fajla
 afl-clang-fast \
     -I../libcsv \
     -o test_afl \

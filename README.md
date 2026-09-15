@@ -1,34 +1,35 @@
-# Seminarski rad – Analiza projekta otvoftenog koda
+# 2026_Analysis_libcsv
 
-## Autor
-**Jelena Komazec, 1046/2025** 
-Email: [mi251046@alas.matf.bg.ac.rs] 
+**Autor:** Jelena Komazec
+**Broj indeksa:** 1046/2025
+
+## libcsv
+
+Projekat je rađen nad bibliotekom **libcsv**, koja služi za parsiranje i generisanje CSV podataka u programskom jeziku C.
+
+**Osnovne informacije:**
+
+* *Repozitorijum:* https://github.com/rgamble/libcsv
+* *Jezik:* C
+* *Verzija:* 3.0.3
+* *Licenca:* GNU LGPL
+* *Analizirana grana:* master
+* *Heš komita:* b1d5212
 
 ---
 
-## Opis projekta
+## Korišćeni alati i tehnike
 
-Naziv projekta: **libcsv**
-Autor: Robert Gamble
-Verzija: 3.0.3
-Licenca: GNU LGPL
-
-**Opis:**
-
-libcsv je mala i brza biblioteka za parsiranje i generisanje CSV podataka u C-u. Omogućava:
-- Parsiranje CSV fajlova sa navodnicima, escape sekvencama i praznim poljima
-- Pisanje CSV podataka u fajl ili memorijski buffer
-- Konfigurisanje delimiter-a, navodnika i opcija parsera (strogi režim, null-terminatori, tretiranje praznih polja kao NULL)
-- Praćenje grešaka i upravljanje memorijom
-
-
-- Grana koja je analizirana: `master` 
-- Commit heš: `b1d5212`
-- Link ka repozitorijumu: [https://github.com/rgamble/libcsv](https://github.com/rgamble/libcsv) 
-
-Cilj analize bio je da se ispita ponašanje biblioteke pri različitim ulazima i da se otkriju potencijalni problemi sa memorijom, greške u parsiranju i stabilnost programa.
-
+| # | Alat             | Kategorija       | Opis                                         |
+| - | ---------------- | ---------------- | -------------------------------------------- |
+| 1 | clang-tidy       | Statička analiza | Detekcija potencijalnih problema             |
+| 2 | Unit testovi     | Testiranje       | Funkcionalno testiranje biblioteke           |
+| 3 | GCOV             | Pokrivenost      | Praćenje pokrivenosti koda                   |
+| 4 | Valgrind         | Memorija         | Provera memorije i curenja                   |
+| 5 | Flawfinder       | Bezbednost       | Detekcija potencijalno rizičnih konstrukcija |
+| 6 | Lizard           | Kompleksnost     | Analiza kompleksnosti koda                   |
+| 7 | AFL++            | Fuzzing          | Automatsko generisanje i testiranje ulaza    |
 
 ## Zaključak
 
-Sve testirane funkcionalnosti i alati potvrđuju da je biblioteka pogodna za dalje korišćenje i integraciju u projekte koji zahtevaju rad sa CSV podacima
+Analizom **libcsv** biblioteke različitim alatima provereni su funkcionalnost, pokrivenost koda, upravljanje memorijom, bezbednost, kompleksnost i ponašanje programa na različitim ulazima. Unit testovi su uspešno prošli, dok Valgrind, Flawfinder i AFL++ tokom sprovedenih analiza nisu detektovali memorijske probleme, potencijalne sigurnosne probleme, crash-eve ili hang-ove. Clang-Tidy je prijavio određena upozorenja, a Lizard je ukazao na povećanu kompleksnost funkcije `csv_parse()`. Na osnovu sprovedenih analiza, biblioteka se na korišćenom skupu testova pokazala kao stabilna, uz nekoliko mesta koja zahtevaju dodatnu pažnju.
